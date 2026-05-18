@@ -230,7 +230,7 @@
     private int currentUserId;
     private List<Project> userProjects = new();
 
-    private static readonly long MaxFileSizeBytes = 50 * 1024 * 1024;
+    private static readonly long MaxFileSizeBytes = 25 * 1024 * 1024; // 25 MB
     private static readonly string[] AllowedMimeTypes =
     {
         "application/pdf",

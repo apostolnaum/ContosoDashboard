@@ -5,6 +5,18 @@
 **Status**: Draft  
 **Input**: User description: "Add document upload and management capabilities to the ContosoDashboard application enabling employees to upload work-related documents, organize them by category and project, and share them with team members"
 
+## Clarifications
+
+### Session 2026-05-18
+
+- Q: Accessibility compliance requirements? → A: Basic accessibility (keyboard navigation, form labels, no screen reader testing)
+- Q: Virus scanning implementation approach? → A: Placeholder implementation (logging + success return) designed for easy swap-out during production
+- Q: Storage quota enforcement? → A: No quota enforcement—rely on system disk space; users cannot exceed available storage
+- Q: Search result ranking/ordering? → A: Chronological order (newest documents first) as default; users can sort by title, date, category, file size via column headers
+- Q: File name collision handling? → A: Allow duplicate filenames; track by DocumentId (simplest implementation, users can have multiple documents with same name in different contexts)
+
+---
+
 ## User Scenarios & Testing
 
 ### User Story 1 - Upload Personal Documents (Priority: P1)
@@ -134,8 +146,9 @@ Task workflows benefit from attached documents. This is a nice-to-have enhanceme
 - System automatically captures: upload timestamp, uploader username, file size, MIME type
 - Files exceeding size limit or unsupported types are rejected with clear error messages
 - Progress indicator displays during upload
-- Files are scanned for viruses/malware before storage
+- Files are scanned via placeholder antivirus service (logs scan + returns success for training; production implementation can swap to real ClamAV/VirusTotal)
 - Success/error messages display after upload completes
+- Multiple documents with identical filenames are allowed; tracked by unique DocumentId
 
 ### Document Organization
 
@@ -143,7 +156,7 @@ Task workflows benefit from attached documents. This is a nice-to-have enhanceme
 - Documents sortable by title, upload date, category, file size
 - Documents filterable by category, project, date range
 - "Project Documents" view shows all documents associated with a specific project
-- Search across title, description, tags, uploader name with results within 2 seconds
+- Search across title, description, tags, uploader name with results within 2 seconds, ordered by upload date (newest first)
 - Users only see documents they have authorization to access
 
 ### Document Access
@@ -239,14 +252,15 @@ Task workflows benefit from attached documents. This is a nice-to-have enhanceme
 
 ## Assumptions
 
-1. **Virus scanning**: Initial implementation uses basic file type validation; production requires proper antivirus scanning
+1. **Virus scanning**: Placeholder implementation logs scan attempts and returns success; production can swap to ClamAV/VirusTotal
 2. **Storage capacity**: Training environment has sufficient disk space; no quota enforcement required
 3. **File preview**: Browser-native PDF/image preview sufficient; no third-party preview service needed
-4. **Authentication**: Existing mock authentication system sufficient for training; production requires Azure AD/Identity Server
-5. **Performance targets**: Achievable with proper EF Core queries and indexing on DocumentId, ProjectId, UserId, UploadedDate
-6. **Notification system**: Leverages existing NotificationService; document share actions generate notifications
-7. **Audit reporting**: Activity logs captured; administrator reporting UI developed in P2+ iteration
-8. **Delete workflow**: Soft delete not required; permanent deletion with confirmation acceptable
+4. **Accessibility**: Basic keyboard navigation and form labels required; full WCAG 2.1 Level AA deferred to production
+5. **Authentication**: Existing mock authentication system sufficient for training; production requires Azure AD/Identity Server
+6. **Performance targets**: Achievable with proper EF Core queries and indexing on DocumentId, ProjectId, UserId, UploadedDate
+7. **Notification system**: Leverages existing NotificationService; document share actions generate notifications
+8. **Audit reporting**: Activity logs captured; administrator reporting UI developed in P2+ iteration
+9. **Delete workflow**: Soft delete not required; permanent deletion with confirmation acceptable
 
 ## Dependencies & Constraints
 

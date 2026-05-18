@@ -17,6 +17,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; } = null!;
     public DbSet<ProjectMember> ProjectMembers { get; set; } = null!;
     public DbSet<Announcement> Announcements { get; set; } = null!;
+    public DbSet<Document> Documents { get; set; } = null!;
+    public DbSet<DocumentShare> DocumentShares { get; set; } = null!;
+    public DbSet<DocumentActivityLog> DocumentActivityLogs { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +67,62 @@ public class ApplicationDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        // Document relationships
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.Uploader)
+            .WithMany()
+            .HasForeignKey(d => d.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Document>()
+            .HasOne(d => d.Project)
+            .WithMany()
+            .HasForeignKey(d => d.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Document>()
+            .HasIndex(d => new { d.UserId, d.UploadedDate })
+            .HasDatabaseName("IX_Document_UserId_UploadedDate");
+
+        modelBuilder.Entity<Document>()
+            .HasIndex(d => new { d.ProjectId, d.UploadedDate })
+            .HasDatabaseName("IX_Document_ProjectId_UploadedDate");
+
+        // DocumentShare relationships
+        modelBuilder.Entity<DocumentShare>()
+            .HasOne(s => s.Document)
+            .WithMany(d => d.Shares)
+            .HasForeignKey(s => s.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DocumentShare>()
+            .HasOne(s => s.SharedWithUser)
+            .WithMany()
+            .HasForeignKey(s => s.SharedWithUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<DocumentShare>()
+            .HasIndex(s => new { s.DocumentId, s.SharedWithUserId })
+            .IsUnique()
+            .HasDatabaseName("UQ_DocumentShare_Document_User");
+
+        // DocumentActivityLog relationships
+        modelBuilder.Entity<DocumentActivityLog>()
+            .HasOne(a => a.Document)
+            .WithMany(d => d.ActivityLogs)
+            .HasForeignKey(a => a.DocumentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<DocumentActivityLog>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<DocumentActivityLog>()
+            .HasIndex(a => new { a.DocumentId, a.ActivityDate })
+            .HasDatabaseName("IX_ActivityLog_DocumentId_ActivityDate");
+
         // Seed initial data
         SeedData(modelBuilder);
     }
@@ -81,7 +140,7 @@ public class ApplicationDbContext : DbContext
                 JobTitle = "Administrator",
                 Role = UserRole.Administrator,
                 AvailabilityStatus = AvailabilityStatus.Available,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 EmailNotificationsEnabled = true,
                 InAppNotificationsEnabled = true
             },
@@ -94,7 +153,7 @@ public class ApplicationDbContext : DbContext
                 JobTitle = "Project Manager",
                 Role = UserRole.ProjectManager,
                 AvailabilityStatus = AvailabilityStatus.Available,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 EmailNotificationsEnabled = true,
                 InAppNotificationsEnabled = true
             },
@@ -107,7 +166,7 @@ public class ApplicationDbContext : DbContext
                 JobTitle = "Team Lead",
                 Role = UserRole.TeamLead,
                 AvailabilityStatus = AvailabilityStatus.Available,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 EmailNotificationsEnabled = true,
                 InAppNotificationsEnabled = true
             },
@@ -120,7 +179,7 @@ public class ApplicationDbContext : DbContext
                 JobTitle = "Software Engineer",
                 Role = UserRole.Employee,
                 AvailabilityStatus = AvailabilityStatus.Available,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 EmailNotificationsEnabled = true,
                 InAppNotificationsEnabled = true
             }
@@ -134,11 +193,11 @@ public class ApplicationDbContext : DbContext
                 Name = "ContosoDashboard Development",
                 Description = "Internal employee productivity dashboard",
                 ProjectManagerId = 2,
-                StartDate = DateTime.UtcNow.AddDays(-30),
-                TargetCompletionDate = DateTime.UtcNow.AddDays(60),
+                StartDate = new DateTime(2024, 12, 2, 0, 0, 0, DateTimeKind.Utc),
+                TargetCompletionDate = new DateTime(2025, 3, 2, 0, 0, 0, DateTimeKind.Utc),
                 Status = ProjectStatus.Active,
-                CreatedDate = DateTime.UtcNow.AddDays(-30),
-                UpdatedDate = DateTime.UtcNow
+                CreatedDate = new DateTime(2024, 12, 2, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -151,12 +210,12 @@ public class ApplicationDbContext : DbContext
                 Description = "Create entity relationship diagram and database design",
                 Priority = TaskPriority.High,
                 Status = Models.TaskStatus.Completed,
-                DueDate = DateTime.UtcNow.AddDays(-20),
+                DueDate = new DateTime(2024, 12, 12, 0, 0, 0, DateTimeKind.Utc),
                 AssignedUserId = 4,
                 CreatedByUserId = 2,
                 ProjectId = 1,
-                CreatedDate = DateTime.UtcNow.AddDays(-30),
-                UpdatedDate = DateTime.UtcNow.AddDays(-20)
+                CreatedDate = new DateTime(2024, 12, 2, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedDate = new DateTime(2024, 12, 12, 0, 0, 0, DateTimeKind.Utc)
             },
             new TaskItem
             {
@@ -165,12 +224,12 @@ public class ApplicationDbContext : DbContext
                 Description = "Set up Microsoft Entra ID authentication",
                 Priority = TaskPriority.Critical,
                 Status = Models.TaskStatus.InProgress,
-                DueDate = DateTime.UtcNow.AddDays(5),
+                DueDate = new DateTime(2025, 1, 6, 0, 0, 0, DateTimeKind.Utc),
                 AssignedUserId = 4,
                 CreatedByUserId = 2,
                 ProjectId = 1,
-                CreatedDate = DateTime.UtcNow.AddDays(-25),
-                UpdatedDate = DateTime.UtcNow
+                CreatedDate = new DateTime(2024, 12, 7, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new TaskItem
             {
@@ -179,12 +238,12 @@ public class ApplicationDbContext : DbContext
                 Description = "Design user interface mockups for all main pages",
                 Priority = TaskPriority.Medium,
                 Status = Models.TaskStatus.NotStarted,
-                DueDate = DateTime.UtcNow.AddDays(10),
+                DueDate = new DateTime(2025, 1, 11, 0, 0, 0, DateTimeKind.Utc),
                 AssignedUserId = 4,
                 CreatedByUserId = 2,
                 ProjectId = 1,
-                CreatedDate = DateTime.UtcNow.AddDays(-20),
-                UpdatedDate = DateTime.UtcNow.AddDays(-20)
+                CreatedDate = new DateTime(2024, 12, 12, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedDate = new DateTime(2024, 12, 12, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -196,7 +255,7 @@ public class ApplicationDbContext : DbContext
                 ProjectId = 1,
                 UserId = 3,
                 Role = "TeamLead",
-                AssignedDate = DateTime.UtcNow.AddDays(-30)
+                AssignedDate = new DateTime(2024, 12, 2, 0, 0, 0, DateTimeKind.Utc)
             },
             new ProjectMember
             {
@@ -204,7 +263,7 @@ public class ApplicationDbContext : DbContext
                 ProjectId = 1,
                 UserId = 4,
                 Role = "Developer",
-                AssignedDate = DateTime.UtcNow.AddDays(-30)
+                AssignedDate = new DateTime(2024, 12, 2, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
@@ -216,8 +275,8 @@ public class ApplicationDbContext : DbContext
                 Title = "Welcome to ContosoDashboard",
                 Content = "Welcome to the new ContosoDashboard application. This platform will help you manage your tasks and projects more efficiently.",
                 CreatedByUserId = 1,
-                PublishDate = DateTime.UtcNow,
-                ExpiryDate = DateTime.UtcNow.AddDays(30),
+                PublishDate = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                ExpiryDate = new DateTime(2025, 1, 31, 0, 0, 0, DateTimeKind.Utc),
                 IsActive = true
             }
         );

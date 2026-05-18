@@ -1,0 +1,190 @@
+@page "/documents/{DocumentId:int}"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(doc?.Title ?? "Document") - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+        </div>
+    }
+    else if (doc == null)
+    {
+        <div class="alert alert-danger mt-4">
+            <span class="bi bi-exclamation-triangle-fill me-2"></span>
+            Document not found or you do not have permission to view it.
+            <a href="documents" class="alert-link ms-2">Back to Documents</a>
+        </div>
+    }
+    else
+    {
+        <div class="row mb-3">
+            <div class="col">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="documents">Documents</a></li>
+                        <li class="breadcrumb-item active">@doc.Title</li>
+                    </ol>
+                </nav>
+                <div class="d-flex align-items-center gap-3">
+                    <h1 class="mb-0">
+                        <span class="bi @GetMimeIcon(doc.MimeType) me-2 text-secondary"></span>@doc.Title
+                    </h1>
+                    @ScanStatusBadge(doc.ScanStatus)
+                </div>
+            </div>
+            <div class="col-auto d-flex gap-2 align-items-start">
+                <a href="/api/documents/@doc.DocumentId/download" class="btn btn-primary" download>
+                    <span class="bi bi-download me-1"></span> Download
+                </a>
+                @if (doc.UserId == currentUserId)
+                {
+                    <a href="documents/@doc.DocumentId/edit" class="btn btn-outline-secondary">
+                        <span class="bi bi-pencil me-1"></span> Edit
+                    </a>
+                }
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Preview pane -->
+            <div class="col-lg-8 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <span class="bi bi-eye me-2"></span>Preview
+                    </div>
+                    <div class="card-body p-0 d-flex justify-content-center align-items-center" style="min-height:400px;">
+                        @if (doc.ScanStatus == "Rejected")
+                        {
+                            <div class="text-center text-danger py-5">
+                                <span class="bi bi-shield-x display-4"></span>
+                                <p class="mt-3">This file was flagged by the virus scanner and cannot be previewed.</p>
+                            </div>
+                        }
+                        else if (doc.MimeType == "application/pdf")
+                        {
+                            <embed src="/api/documents/@doc.DocumentId/preview"
+                                   type="application/pdf"
+                                   width="100%"
+                                   height="600px"
+                                   class="rounded" />
+                        }
+                        else if (doc.MimeType.StartsWith("image/"))
+                        {
+                            <img src="/api/documents/@doc.DocumentId/preview"
+                                 alt="@doc.Title"
+                                 class="img-fluid rounded"
+                                 style="max-height:600px;" />
+                        }
+                        else
+                        {
+                            <div class="text-center text-muted py-5">
+                                <span class="bi @GetMimeIcon(doc.MimeType) display-4"></span>
+                                <p class="mt-3">Preview not available for this file type.</p>
+                                <a href="/api/documents/@doc.DocumentId/download" class="btn btn-outline-primary" download>
+                                    <span class="bi bi-download me-1"></span> Download to view
+                                </a>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metadata pane -->
+            <div class="col-lg-4 mb-4">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header">
+                        <span class="bi bi-info-circle me-2"></span>Details
+                    </div>
+                    <div class="card-body">
+                        <dl class="row mb-0 small">
+                            <dt class="col-5">Category</dt>
+                            <dd class="col-7"><span class="badge bg-secondary">@doc.Category</span></dd>
+
+                            <dt class="col-5">Project</dt>
+                            <dd class="col-7">@(doc.ProjectName ?? "—")</dd>
+
+                            <dt class="col-5">Uploaded by</dt>
+                            <dd class="col-7">@doc.UploaderName</dd>
+
+                            <dt class="col-5">Date</dt>
+                            <dd class="col-7">@doc.UploadedDate.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd>
+
+                            <dt class="col-5">File size</dt>
+                            <dd class="col-7">@doc.FileSizeDisplay</dd>
+
+                            <dt class="col-5">MIME type</dt>
+                            <dd class="col-7 text-truncate">@doc.MimeType</dd>
+
+                            @if (!string.IsNullOrEmpty(doc.Description))
+                            {
+                                <dt class="col-5">Description</dt>
+                                <dd class="col-7">@doc.Description</dd>
+                            }
+
+                            @if (!string.IsNullOrEmpty(doc.Tags))
+                            {
+                                <dt class="col-12 mb-1">Tags</dt>
+                                <dd class="col-12">
+                                    @foreach (var tag in doc.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                    {
+                                        <span class="badge bg-light text-secondary border me-1 mb-1">@tag</span>
+                                    }
+                                </dd>
+                            }
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int DocumentId { get; set; }
+
+    private DocumentDto? doc;
+    private bool isLoading = true;
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int uid))
+            currentUserId = uid;
+
+        doc = await DocumentService.GetDocumentAsync(DocumentId, currentUserId);
+        isLoading = false;
+    }
+
+    private static string GetMimeIcon(string mimeType) => mimeType switch
+    {
+        "application/pdf" => "bi-file-earmark-pdf",
+        var m when m.StartsWith("image/") => "bi-file-earmark-image",
+        var m when m.Contains("word") => "bi-file-earmark-word",
+        var m when m.Contains("excel") || m.Contains("spreadsheet") => "bi-file-earmark-excel",
+        var m when m.Contains("powerpoint") || m.Contains("presentation") => "bi-file-earmark-ppt",
+        "application/zip" => "bi-file-earmark-zip",
+        _ => "bi-file-earmark"
+    };
+
+    private static RenderFragment ScanStatusBadge(string status) => status switch
+    {
+        "Approved" => @<span class="badge bg-success">Approved</span>,
+        "Pending" => @<span class="badge bg-warning text-dark">Scanning…</span>,
+        "Rejected" => @<span class="badge bg-danger">Flagged</span>,
+        _ => @<span class="badge bg-secondary">@status</span>
+    };
+}

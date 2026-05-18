@@ -1,0 +1,395 @@
+@page "/documents/{DocumentId:int}/edit"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject IProjectService ProjectService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Edit Document - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+        </div>
+    }
+    else if (loadError != null)
+    {
+        <div class="alert alert-danger mt-4">
+            <span class="bi bi-exclamation-triangle-fill me-2"></span>@loadError
+            <a href="documents" class="alert-link ms-2">Back to Documents</a>
+        </div>
+    }
+    else
+    {
+        <div class="row mb-4">
+            <div class="col">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="documents">Documents</a></li>
+                        <li class="breadcrumb-item"><a href="documents/@DocumentId">@originalDoc?.Title</a></li>
+                        <li class="breadcrumb-item active">Edit</li>
+                    </ol>
+                </nav>
+                <h1><span class="bi bi-pencil me-2"></span>Edit Document</h1>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(saveError))
+        {
+            <div class="alert alert-danger alert-dismissible">
+                <span class="bi bi-exclamation-triangle-fill me-2"></span>@saveError
+                <button type="button" class="btn-close" @onclick="() => saveError = null"></button>
+            </div>
+        }
+
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+
+                <!-- Metadata form -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header fw-semibold">
+                        <span class="bi bi-card-text me-2"></span>Document Information
+                    </div>
+                    <div class="card-body p-4">
+                        <EditForm Model="model" OnValidSubmit="SaveMetadata">
+                            <DataAnnotationsValidator />
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    Title <span class="text-danger">*</span>
+                                </label>
+                                <InputText @bind-Value="model.Title" class="form-control" maxlength="255" />
+                                <ValidationMessage For="() => model.Title" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Description</label>
+                                <InputTextArea @bind-Value="model.Description" class="form-control" rows="3" maxlength="2000" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    Category <span class="text-danger">*</span>
+                                </label>
+                                <InputSelect @bind-Value="model.Category" class="form-select">
+                                    @foreach (var cat in Categories)
+                                    {
+                                        <option value="@cat">@cat</option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="() => model.Category" />
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="form-label fw-semibold">Tags</label>
+                                <InputText @bind-Value="model.Tags" class="form-control" maxlength="500" placeholder="Comma-separated tags" />
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                                    @if (isSaving)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                    }
+                                    Save Changes
+                                </button>
+                                <a href="documents/@DocumentId" class="btn btn-outline-secondary">Cancel</a>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+
+                <!-- Replace file section -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header fw-semibold">
+                        <span class="bi bi-arrow-repeat me-2"></span>Replace File
+                    </div>
+                    <div class="card-body p-4">
+                        <p class="text-muted small mb-3">
+                            Upload a new version of this document. The existing file will be replaced.
+                        </p>
+
+                        @if (!string.IsNullOrEmpty(replaceError))
+                        {
+                            <div class="alert alert-danger small">@replaceError</div>
+                        }
+                        @if (replaceSuccess)
+                        {
+                            <div class="alert alert-success small">File replaced successfully.</div>
+                        }
+
+                        <div class="mb-3">
+                            <InputFile OnChange="OnReplaceFileSelected"
+                                       accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.txt,.csv,.zip"
+                                       class="form-control" />
+                            @if (replaceFile != null)
+                            {
+                                <div class="mt-2 text-muted small">
+                                    <span class="bi bi-file-earmark me-1"></span>
+                                    @replaceFile.Name &nbsp;·&nbsp; @FormatSize(replaceFile.Size)
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(replaceFileValidationError))
+                            {
+                                <div class="text-danger small mt-1">@replaceFileValidationError</div>
+                            }
+                        </div>
+
+                        @if (isReplacing)
+                        {
+                            <div class="progress mb-3">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                     style="width: 100%" role="progressbar"></div>
+                            </div>
+                        }
+
+                        <button class="btn btn-warning"
+                                @onclick="ReplaceFile"
+                                disabled="@(replaceFile == null || isReplacing)">
+                            @if (isReplacing)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <span class="bi bi-arrow-repeat me-1"></span>Replace File
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Danger zone -->
+                <div class="card border-danger shadow-sm">
+                    <div class="card-header text-danger fw-semibold">
+                        <span class="bi bi-exclamation-triangle me-2"></span>Danger Zone
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Permanently delete this document and its file. This action cannot be undone.</p>
+                        <button class="btn btn-outline-danger" @onclick="() => showDeleteConfirm = true">
+                            <span class="bi bi-trash me-1"></span>Delete Document
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Delete confirm modal -->
+@if (showDeleteConfirm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5);" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">Delete Document</h5>
+                    <button type="button" class="btn-close" @onclick="() => showDeleteConfirm = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to permanently delete <strong>@originalDoc?.Title</strong>?</p>
+                    <p class="text-danger small">This action cannot be undone.</p>
+                    @if (!string.IsNullOrEmpty(deleteError))
+                    {
+                        <div class="alert alert-danger small">@deleteError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="() => showDeleteConfirm = false">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DeleteDocument" disabled="@isDeleting">
+                        @if (isDeleting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int DocumentId { get; set; }
+
+    private DocumentDto? originalDoc;
+    private EditFormModel model = new();
+    private bool isLoading = true;
+    private bool isSaving;
+    private bool isReplacing;
+    private bool isDeleting;
+    private bool showDeleteConfirm;
+    private bool replaceSuccess;
+    private string? loadError;
+    private string? saveError;
+    private string? replaceError;
+    private string? replaceFileValidationError;
+    private string? deleteError;
+    private IBrowserFile? replaceFile;
+    private int currentUserId;
+    private List<Project> userProjects = new();
+
+    private static readonly long MaxFileSizeBytes = 50 * 1024 * 1024;
+    private static readonly string[] AllowedMimeTypes =
+    {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "image/png", "image/jpeg", "image/gif",
+        "text/plain", "text/csv",
+        "application/zip"
+    };
+
+    private static readonly string[] Categories =
+    {
+        "Report", "Specification", "Contract", "Invoice",
+        "Presentation", "Spreadsheet", "Documentation",
+        "Image", "Archive", "Other"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var claim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (claim != null && int.TryParse(claim.Value, out int uid))
+            currentUserId = uid;
+
+        originalDoc = await DocumentService.GetDocumentAsync(DocumentId, currentUserId);
+
+        if (originalDoc == null)
+        {
+            loadError = "Document not found or you do not have permission to edit it.";
+        }
+        else if (originalDoc.UserId != currentUserId)
+        {
+            loadError = "Only the document owner can edit this document.";
+        }
+        else
+        {
+            model.Title = originalDoc.Title;
+            model.Description = originalDoc.Description;
+            model.Category = originalDoc.Category;
+            model.Tags = originalDoc.Tags;
+        }
+
+        isLoading = false;
+    }
+
+    private async Task SaveMetadata()
+    {
+        isSaving = true;
+        saveError = null;
+        try
+        {
+            var updated = await DocumentService.UpdateAsync(DocumentId, new DocumentUpdateRequest
+            {
+                Title = model.Title.Trim(),
+                Description = string.IsNullOrWhiteSpace(model.Description) ? null : model.Description.Trim(),
+                Category = model.Category,
+                Tags = string.IsNullOrWhiteSpace(model.Tags) ? null : model.Tags.Trim()
+            }, currentUserId);
+            originalDoc = updated;
+            NavigationManager.NavigateTo($"documents/{DocumentId}");
+        }
+        catch (Exception ex)
+        {
+            saveError = ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void OnReplaceFileSelected(InputFileChangeEventArgs e)
+    {
+        replaceFileValidationError = null;
+        replaceError = null;
+        replaceSuccess = false;
+        replaceFile = e.File;
+
+        if (replaceFile.Size > MaxFileSizeBytes)
+        {
+            replaceFileValidationError = $"File is too large. Max {FormatSize(MaxFileSizeBytes)}.";
+            replaceFile = null;
+            return;
+        }
+        if (!AllowedMimeTypes.Contains(replaceFile.ContentType))
+        {
+            replaceFileValidationError = "File type not allowed.";
+            replaceFile = null;
+        }
+    }
+
+    private async Task ReplaceFile()
+    {
+        if (replaceFile == null) return;
+        isReplacing = true;
+        replaceError = null;
+        replaceSuccess = false;
+
+        try
+        {
+            await using var stream = replaceFile.OpenReadStream(MaxFileSizeBytes);
+            var updated = await DocumentService.ReplaceFileAsync(
+                DocumentId, stream, replaceFile.Name, replaceFile.Size, replaceFile.ContentType, currentUserId);
+            originalDoc = updated;
+            replaceFile = null;
+            replaceSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            replaceError = ex.Message;
+        }
+        finally
+        {
+            isReplacing = false;
+        }
+    }
+
+    private async Task DeleteDocument()
+    {
+        isDeleting = true;
+        deleteError = null;
+        try
+        {
+            await DocumentService.DeleteAsync(DocumentId, currentUserId);
+            NavigationManager.NavigateTo("documents");
+        }
+        catch (Exception ex)
+        {
+            deleteError = ex.Message;
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
+    };
+
+    private class EditFormModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Title is required.")]
+        [System.ComponentModel.DataAnnotations.MaxLength(255)]
+        public string Title { get; set; } = string.Empty;
+
+        public string? Description { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Category is required.")]
+        public string Category { get; set; } = string.Empty;
+
+        public string? Tags { get; set; }
+    }
+}

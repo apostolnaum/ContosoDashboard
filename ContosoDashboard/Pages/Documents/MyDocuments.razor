@@ -1,0 +1,384 @@
+@page "/documents"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject IProjectService ProjectService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1><span class="bi bi-file-earmark-text me-2"></span>My Documents</h1>
+        </div>
+        <div class="col-auto">
+            <a href="documents/upload" class="btn btn-primary">
+                <span class="bi bi-upload me-1"></span> Upload Document
+            </a>
+        </div>
+    </div>
+
+    <!-- Search and filter bar -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Search</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><span class="bi bi-search"></span></span>
+                        <input type="text"
+                               class="form-control"
+                               placeholder="Search title, description, or tags…"
+                               value="@searchTerm"
+                               @oninput="OnSearchInput" />
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" @bind="filterCategory" @bind:after="LoadDocuments">
+                        <option value="">All Categories</option>
+                        @foreach (var cat in Categories)
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Project</label>
+                    <select class="form-select" @bind="filterProjectId" @bind:after="LoadDocuments">
+                        <option value="">All Projects</option>
+                        @foreach (var proj in userProjects)
+                        {
+                            <option value="@proj.ProjectId">@proj.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" @onclick="ClearFilters">
+                        <span class="bi bi-x-circle me-1"></span>Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+        </div>
+    }
+    else if (result == null || result.Items.Count == 0)
+    {
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-5">
+                <span class="bi bi-folder2-open display-4 text-muted"></span>
+                <p class="mt-3 text-muted">
+                    @if (HasActiveFilters)
+                    {
+                        <span>No documents match your filters.</span>
+                    }
+                    else
+                    {
+                        <span>You haven't uploaded any documents yet.</span>
+                    }
+                </p>
+                <a href="documents/upload" class="btn btn-primary mt-2">
+                    <span class="bi bi-upload me-1"></span> Upload your first document
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="text-muted small">
+                    Showing @((result.Page - 1) * result.PageSize + 1)–@Math.Min(result.Page * result.PageSize, result.TotalCount)
+                    of @result.TotalCount document@(result.TotalCount == 1 ? "" : "s")
+                </span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Title</th>
+                            <th>Category</th>
+                            <th>Project</th>
+                            <th>Size</th>
+                            <th>Uploaded</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var doc in result.Items)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="documents/@doc.DocumentId" class="text-decoration-none fw-semibold">
+                                        <span class="bi @GetMimeIcon(doc.MimeType) me-2 text-secondary"></span>@doc.Title
+                                    </a>
+                                    @if (!string.IsNullOrEmpty(doc.Tags))
+                                    {
+                                        <div class="mt-1">
+                                            @foreach (var tag in doc.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                            {
+                                                <span class="badge bg-light text-secondary border me-1">@tag</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
+                                <td><span class="badge bg-secondary">@doc.Category</span></td>
+                                <td>@(doc.ProjectName ?? "—")</td>
+                                <td>@doc.FileSizeDisplay</td>
+                                <td>@doc.UploadedDate.ToLocalTime().ToString("MMM d, yyyy")</td>
+                                <td>@ScanStatusBadge(doc.ScanStatus)</td>
+                                <td class="text-end">
+                                    <a href="documents/@doc.DocumentId" class="btn btn-sm btn-outline-primary me-1" title="View">
+                                        <span class="bi bi-eye"></span>
+                                    </a>
+                                    <a href="documents/@doc.DocumentId/edit" class="btn btn-sm btn-outline-secondary me-1" title="Edit">
+                                        <span class="bi bi-pencil"></span>
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-danger" title="Delete"
+                                            @onclick="() => ConfirmDelete(doc)">
+                                        <span class="bi bi-trash"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (result.TotalPages > 1)
+            {
+                <div class="card-footer d-flex justify-content-center">
+                    <nav aria-label="Documents pagination">
+                        <ul class="pagination mb-0">
+                            <li class="page-item @(result.HasPreviousPage ? "" : "disabled")">
+                                <button class="page-link" @onclick="PreviousPage">
+                                    <span class="bi bi-chevron-left"></span>
+                                </button>
+                            </li>
+                            @for (int p = 1; p <= result.TotalPages; p++)
+                            {
+                                var pageNum = p;
+                                <li class="page-item @(pageNum == currentPage ? "active" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                                </li>
+                            }
+                            <li class="page-item @(result.HasNextPage ? "" : "disabled")">
+                                <button class="page-link" @onclick="NextPage">
+                                    <span class="bi bi-chevron-right"></span>
+                                </button>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Delete confirmation modal -->
+@if (documentToDelete != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background:rgba(0,0,0,.5);" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete Document</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>@documentToDelete.Title</strong>?</p>
+                    <p class="text-danger small">This action cannot be undone.</p>
+                    @if (!string.IsNullOrEmpty(deleteError))
+                    {
+                        <div class="alert alert-danger small">@deleteError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ExecuteDelete" disabled="@isDeleting">
+                        @if (isDeleting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private PaginatedResult<DocumentDto>? result;
+    private bool isLoading = true;
+    private int currentUserId;
+    private string searchTerm = string.Empty;
+    private string filterCategory = string.Empty;
+    private string filterProjectId = string.Empty;
+    private int currentPage = 1;
+    private List<Project> userProjects = new();
+
+    private DocumentDto? documentToDelete;
+    private bool isDeleting;
+    private string? deleteError;
+
+    private System.Timers.Timer? debounceTimer;
+
+    private static readonly string[] Categories =
+    {
+        "Report", "Specification", "Contract", "Invoice",
+        "Presentation", "Spreadsheet", "Documentation",
+        "Image", "Archive", "Other"
+    };
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrEmpty(searchTerm) ||
+        !string.IsNullOrEmpty(filterCategory) ||
+        !string.IsNullOrEmpty(filterProjectId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int uid))
+            currentUserId = uid;
+
+        userProjects = await ProjectService.GetUserProjectsAsync(currentUserId);
+        await LoadDocuments();
+    }
+
+    private async Task LoadDocuments()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            int? projId = string.IsNullOrEmpty(filterProjectId) ? null : int.Parse(filterProjectId);
+
+            result = await DocumentService.GetUserDocumentsAsync(
+                currentUserId,
+                string.IsNullOrEmpty(filterCategory) ? null : filterCategory,
+                projId,
+                string.IsNullOrEmpty(searchTerm) ? null : searchTerm,
+                currentPage,
+                20);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        debounceTimer?.Dispose();
+        debounceTimer = new System.Timers.Timer(400);
+        debounceTimer.Elapsed += async (_, _) =>
+        {
+            debounceTimer?.Dispose();
+            debounceTimer = null;
+            currentPage = 1;
+            await InvokeAsync(LoadDocuments);
+        };
+        debounceTimer.AutoReset = false;
+        debounceTimer.Start();
+    }
+
+    private async Task ClearFilters()
+    {
+        searchTerm = string.Empty;
+        filterCategory = string.Empty;
+        filterProjectId = string.Empty;
+        currentPage = 1;
+        await LoadDocuments();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage > 1) { currentPage--; await LoadDocuments(); }
+    }
+
+    private async Task NextPage()
+    {
+        if (result?.HasNextPage == true) { currentPage++; await LoadDocuments(); }
+    }
+
+    private async Task GoToPage(int page)
+    {
+        currentPage = page;
+        await LoadDocuments();
+    }
+
+    private void ConfirmDelete(DocumentDto doc)
+    {
+        documentToDelete = doc;
+        deleteError = null;
+    }
+
+    private void CancelDelete()
+    {
+        documentToDelete = null;
+        deleteError = null;
+    }
+
+    private async Task ExecuteDelete()
+    {
+        if (documentToDelete == null) return;
+        isDeleting = true;
+        deleteError = null;
+
+        try
+        {
+            await DocumentService.DeleteAsync(documentToDelete.DocumentId, currentUserId);
+            documentToDelete = null;
+            currentPage = 1;
+            await LoadDocuments();
+        }
+        catch (Exception ex)
+        {
+            deleteError = ex.Message;
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private static string GetMimeIcon(string mimeType) => mimeType switch
+    {
+        "application/pdf" => "bi-file-earmark-pdf",
+        var m when m.StartsWith("image/") => "bi-file-earmark-image",
+        var m when m.Contains("word") => "bi-file-earmark-word",
+        var m when m.Contains("excel") || m.Contains("spreadsheet") => "bi-file-earmark-excel",
+        var m when m.Contains("powerpoint") || m.Contains("presentation") => "bi-file-earmark-ppt",
+        "application/zip" => "bi-file-earmark-zip",
+        _ => "bi-file-earmark"
+    };
+
+    private static RenderFragment ScanStatusBadge(string status) => status switch
+    {
+        "Approved" => @<span class="badge bg-success">Approved</span>,
+        "Pending" => @<span class="badge bg-warning text-dark">Scanning…</span>,
+        "Rejected" => @<span class="badge bg-danger">Rejected</span>,
+        _ => @<span class="badge bg-secondary">@status</span>
+    };
+
+    public void Dispose()
+    {
+        debounceTimer?.Dispose();
+    }
+}

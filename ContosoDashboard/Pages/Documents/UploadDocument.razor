@@ -245,11 +245,13 @@
         uploadProgress = 10;
         errorMessage = null;
         StateHasChanged();
+        await Task.Delay(1); // yield so the progress bar renders before upload starts
 
         try
         {
             uploadProgress = 30;
             StateHasChanged();
+            await Task.Delay(1);
 
             await using var stream = selectedFile.OpenReadStream(MaxFileSizeBytes);
 
@@ -272,6 +274,7 @@
 
             uploadProgress = 60;
             StateHasChanged();
+            await Task.Delay(1);
 
             var dto = await DocumentService.CreateAsync(request);
 

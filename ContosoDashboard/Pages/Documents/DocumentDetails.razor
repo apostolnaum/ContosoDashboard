@@ -5,6 +5,7 @@
 @using System.Security.Claims
 @attribute [Authorize]
 @inject IDocumentService DocumentService
+@inject IFileStorageService FileStorage
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager NavigationManager
 
@@ -72,17 +73,26 @@
                                 <p class="mt-3">This file was flagged by the virus scanner and cannot be previewed.</p>
                             </div>
                         }
-                        else if (doc.MimeType == "application/pdf")
+                        else if (isPreviewLoading)
                         {
-                            <embed src="/api/documents/@doc.DocumentId/preview"
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-secondary" role="status">
+                                    <span class="visually-hidden">Loading preview…</span>
+                                </div>
+                                <p class="mt-2 text-muted small">Loading preview…</p>
+                            </div>
+                        }
+                        else if (previewSrc != null && doc.MimeType == "application/pdf")
+                        {
+                            <embed src="@previewSrc"
                                    type="application/pdf"
                                    width="100%"
                                    height="600px"
                                    class="rounded" />
                         }
-                        else if (doc.MimeType.StartsWith("image/"))
+                        else if (previewSrc != null && doc.MimeType.StartsWith("image/"))
                         {
-                            <img src="/api/documents/@doc.DocumentId/preview"
+                            <img src="@previewSrc"
                                  alt="@doc.Title"
                                  class="img-fluid rounded"
                                  style="max-height:600px;" />
@@ -156,6 +166,8 @@
 
     private DocumentDto? doc;
     private bool isLoading = true;
+    private bool isPreviewLoading;
+    private string? previewSrc;
     private int currentUserId;
 
     protected override async Task OnInitializedAsync()
@@ -167,6 +179,29 @@
 
         doc = await DocumentService.GetDocumentAsync(DocumentId, currentUserId);
         isLoading = false;
+
+        if (doc != null && doc.ScanStatus != "Rejected" &&
+            (doc.MimeType == "application/pdf" || doc.MimeType.StartsWith("image/")))
+        {
+            isPreviewLoading = true;
+            StateHasChanged();
+            try
+            {
+                await using var stream = await FileStorage.DownloadAsync(doc.FilePath);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var base64 = Convert.ToBase64String(ms.ToArray());
+                previewSrc = $"data:{doc.MimeType};base64,{base64}";
+            }
+            catch
+            {
+                // preview unavailable; falls through to the download fallback
+            }
+            finally
+            {
+                isPreviewLoading = false;
+            }
+        }
     }
 
     private static string GetMimeIcon(string mimeType) => mimeType switch
